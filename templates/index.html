@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exoplanet Classifier</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font and smooth background */
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #0d1a3cff 100%);
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 text-white">
+
+    <div id="app-container" class="w-full max-w-lg bg-gray-800 rounded-xl card-shadow p-6 md:p-10">
+        <h1 class="text-3xl font-extrabold mb-2 text-cyan-400 text-center">
+            <span class="text-4xl mr-2"></span> Exoplanet Classifier
+        </h1>
+        <p class="text-gray-400 mb-8 text-center">
+            Enter Values Below:
+        </p>
+        <!-- Input Fields Container -->
+        <div id="input-fields" class="grid grid-cols-1 gap-4">
+            <!-- Fields will be dynamically injected here -->
+        </div>
+
+        <button
+            id="predict-button"
+            onclick="predict()"
+            class="w-full mt-8 py-3 rounded-lg font-bold text-lg transition duration-300 
+                   bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 
+                   shadow-lg hover:shadow-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+            Classify
+        </button>
+
+        <!-- Result Display -->
+        <div class="mt-8 p-4 bg-gray-700 rounded-lg min-h-[100px] flex flex-col justify-center items-center">
+            <div id="result-message" class="text-center">
+                <p class="text-gray-400">Enter features and click 'Classify' to begin.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Feature definitions, matching the logic from the React file
+        const ALL_FEATURE_NAMES = [
+            'koi_fpflag_nt', 'koi_fpflag_ss', 'koi_fpflag_co', 'koi_fpflag_ec',
+            'koi_period', 'koi_period_err1', 'koi_period_err2', 'koi_time0bk',
+            'koi_time0bk_err1', 'koi_time0bk_err2', 'koi_impact', 'koi_impact_err1',
+            'koi_impact_err2', 'koi_duration', 'koi_duration_err1', 'koi_duration_err2',
+            'koi_depth', 'koi_depth_err1', 'koi_depth_err2', 'koi_prad',
+            'koi_prad_err1', 'koi_prad_err2', 'koi_teq', 'koi_insol',
+            'koi_insol_err1', 'koi_insol_err2', 'koi_model_snr', 'koi_tce_plnt_num',
+            'koi_steff', 'koi_steff_err1', 'koi_steff_err2', 'koi_slogg',
+            'koi_slogg_err1', 'koi_slogg_err2', 'koi_srad', 'koi_srad_err1',
+            'koi_srad_err2', 'ra', 'dec', 'koi_kepmag', 'koi_score'
+        ];
+
+        const EDITABLE_FEATURES = [
+            { name: 'koi_period', label: 'Orbital Period (days)', defaultValue: 9.488 },
+            { name: 'koi_prad', label: 'Planet Radius (Earth Radii)', defaultValue: 2.26 },
+            { name: 'koi_depth', label: 'Transit Depth (ppm)', defaultValue: 616.2 },
+            { name: 'koi_steff', label: 'Stellar Temp (K)', defaultValue: 5455 },
+            { name: 'koi_score', label: 'KOI Score (0-1)', defaultValue: 1.0 },
+        ];
+
+        let inputs = {}; // Stores the current values of the editable inputs
+
+        // --- Utility Functions ---
+
+        /**
+         * Renders the initial editable input fields to the DOM.
+         */
+        function renderInputFields() {
+            const inputContainer = document.getElementById('input-fields');
+            inputContainer.innerHTML = '';
+            
+            EDITABLE_FEATURES.forEach(feat => {
+                inputs[feat.name] = feat.defaultValue; // Initialize input state
+                
+                const div = document.createElement('div');
+                div.className = 'flex flex-col items-start';
+                
+                div.innerHTML = `
+                    <label for="${feat.name}" class="text-sm font-medium text-gray-300 mb-1">${feat.label}</label>
+                    <input
+                        type="number"
+                        id="${feat.name}"
+                        name="${feat.name}"
+                        value="${feat.defaultValue}"
+                        oninput="updateInputState(event)"
+                        class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition duration-150"
+                        step="any"
+                    />
+                `;
+                inputContainer.appendChild(div);
+            });
+        }
+        
+        /**
+         * Updates the JavaScript state object when an input changes.
+         * @param {Event} event 
+         */
+        function updateInputState(event) {
+            const { name, value } = event.target;
+            // Ensure value is a float, defaulting to 0.0 if invalid
+            inputs[name] = parseFloat(value) || 0.0;
+        }
+
+
+        /**
+         * Constructs the complete 41-feature dictionary payload.
+         * @returns {Object} The complete feature dictionary.
+         */
+        function constructFullFeatures() {
+            // Start with the default value (0.0) for all features
+            let fullFeatures = ALL_FEATURE_NAMES.reduce((acc, name) => {
+                // Default all features to 0.0
+                acc[name] = 0.0;
+                return acc;
+            }, {});
+
+            // Override with current user inputs
+            Object.keys(inputs).forEach(name => {
+                if (inputs[name] !== undefined) {
+                    fullFeatures[name] = inputs[name];
+                }
+            });
+            
+            return fullFeatures;
+        }
+
+        /**
+         * Renders the prediction result or error message to the DOM.
+         * @param {Object} data 
+         * @param {boolean} isError 
+         * @param {boolean} isLoading 
+         */
+        function renderResult(data, isError, isLoading) {
+            const resultDiv = document.getElementById('result-message');
+            resultDiv.innerHTML = '';
+            
+            if (isLoading) {
+                resultDiv.innerHTML = `<div class="text-cyan-400">Classifying...</div>`;
+                return;
+            }
+
+            if (isError) {
+                resultDiv.innerHTML = `
+                    <div class="text-red-400 font-semibold">
+                        Error: ${data.error || "An unknown network error occurred."}
+                    </div>
+                `;
+                return;
+            }
+
+            if (data && data.prediction) {
+                const isConfirmed = data.prediction.includes('CONFIRMED');
+                const colorClass = isConfirmed ? 'text-green-400' : 'text-yellow-400';
+                
+                resultDiv.innerHTML = `
+                    <div class="text-center">
+                        <p class="text-xl font-bold mb-2">Prediction Result:</p>
+                        <p class="text-3xl font-extrabold ${colorClass}">
+                            ${data.prediction}
+                        </p>
+                        <p class="text-sm text-gray-400 mt-2">
+                            Confidence: ${data.confidence || 'N/A'}
+                        </p>
+                        <p class="mt-4 text-xs text-gray-500">
+                            Total features sent to API: ${Object.keys(constructFullFeatures()).length}
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Default state
+            resultDiv.innerHTML = `<p class="text-gray-400">Enter features and click 'Classify' to begin.</p>`;
+        }
+        
+        // --- Main Prediction Function ---
+
+        async function predict() {
+            const button = document.getElementById('predict-button');
+            const fullFeatures = constructFullFeatures();
+
+            button.disabled = true;
+            renderResult(null, false, true); // Show loading state
+
+            const payload = { features: fullFeatures };
+
+            try {
+                const res = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    renderResult(data, true, false);
+                } else {
+                    renderResult(data, false, false);
+                }
+            } catch (e) {
+                renderResult({ error: "Failed to connect to the prediction API." }, true, false);
+            } finally {
+                button.disabled = false;
+            }
+        }
+        
+        // Initialize on page load
+        window.onload = renderInputFields;
+
+    </script>
+</body>
+</html>
