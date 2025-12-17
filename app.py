@@ -9,13 +9,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
-
+from google import genai
 
 
 app = Flask(__name__)
 CORS(app)
 
 
+# Replace the text below with your actual API key from Google AI Studio
+client = genai.Client(api_key="AIzaSyDKdumXpI0idlYIkLtgP44xTFmdokIRs5s")
 try:
     model = joblib.load("exoplanet_model.pkl")
     scaler = joblib.load("scaler.pkl")
@@ -80,110 +82,109 @@ def update_scatter():
         return jsonify({"error": str(e)}), 500
 
 
+# 1. Add this at the top with your other globals
+last_analysis_results = None 
+
+# 2. Move the Gemini function outside to the top level
+def generate_gemini_summary(summary, top_candidates):
+    # Use the client initialized at the top of your script
+    prompt = f"""
+    You are an astrophysics research assistant.
+    The following are results from a machine learning model that classifies
+    exoplanet candidates using Kepler mission data.
+
+    Summary statistics:
+    - Total candidates analyzed: {summary['total_rows']}
+    - Confirmed exoplanets: {summary['confirmed_exoplanets']}
+    - Non-exoplanets: {summary['not_exoplanets']}
+
+    Top exoplanet candidates (Kepler ID and confidence):
+    {top_candidates}
+
+    Write a concise scientific summary (2–3 paragraphs) explaining:
+    1. Overall model performance
+    2. Observed trends in predictions
+    3. Confidence in detected exoplanets
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        return f"AI Summary generation failed: {str(e)}"
+
+# 3. Cleaned up predict-csv route
 @app.route("/predict-csv", methods=["POST"])
 def predict_csv():
+    global last_analysis_results, last_csv_df
     try:
-        # ---------- File Handling ----------
         if "file" not in request.files:
             return jsonify({"error": "No CSV file uploaded"}), 400
 
         file = request.files["file"]
         df = pd.read_csv(file)
-
-        # Optional axis selection
-        x_feature = request.form.get("x_feature", "koi_period")
-        y_feature = request.form.get("y_feature", "koi_prad")
-
-        # ---------- Validation ----------
+        
+        # Validation
         missing_cols = [c for c in EXPECTED_FEATURES if c not in df.columns]
         if missing_cols:
             return jsonify({"error": f"Missing columns: {missing_cols}"}), 400
 
-        kepid_present = "kepid" in df.columns
-
-        # ---------- Prediction ----------
+        # Prediction logic
         X = df[EXPECTED_FEATURES].fillna(0)
         X_scaled = scaler.transform(X)
-
         predictions = model.predict(X_scaled)
-       
         probabilities = model.predict_proba(X_scaled).max(axis=1)
 
         df["prediction"] = predictions
-        df["prediction_label"] = df["prediction"].apply(
-            lambda x: "Yes" if x == 1 else "No"
-        )
+        df["prediction_label"] = df["prediction"].apply(lambda x: "Yes" if x == 1 else "No")
         df["confidence"] = (probabilities * 100).round(2)
         
-        global last_csv_df
         last_csv_df = df.copy()
 
-        # ---------- Rank List ----------
-        rank_df = df.sort_values(by="confidence", ascending=False)
-
-        rank_list = []
-        for _, row in rank_df.iterrows():
-            rank_list.append({
-                "kepid": int(row["kepid"]) if kepid_present else None,
-                "confidence": row["confidence"],
-                "exoplanet": row["prediction_label"]
-            })
-
-        # ---------- Summary ----------
+        # Prepare summary and rank list
         summary = {
             "total_rows": len(df),
             "confirmed_exoplanets": int((df["prediction"] == 1).sum()),
             "not_exoplanets": int((df["prediction"] == 0).sum())
         }
 
-        # ---------- Graphs ----------
+        rank_df = df.sort_values(by="confidence", ascending=False).head(20)
+        rank_list = []
+        for _, row in rank_df.iterrows():
+            rank_list.append({
+                "kepid": int(row["kepid"]) if "kepid" in df.columns else "N/A",
+                "confidence": row["confidence"],
+                "exoplanet": row["prediction_label"]
+            })
+
+        # --- SAVE FOR AI ROUTE ---
+        last_analysis_results = {
+            "summary": summary,
+            "top_candidates": rank_list
+        }
+
+        # Graphs generation (Same as your code)
         os.makedirs("static", exist_ok=True)
         plt.style.use("dark_background")
-
-        # 1️⃣ Prediction Distribution
+        
+        # Prediction Plot
         plt.figure(figsize=(6,4))
-        sns.countplot(
-            x=df["prediction_label"],
-            palette=["#00B4D8", "#0077B6"]
-        )
-        plt.title("Exoplanet Prediction Distribution", color="white")
-        plt.xlabel("Prediction", color="white")
-        plt.ylabel("Count", color="white")
-        plt.tight_layout()
+        sns.countplot(x=df["prediction_label"], palette=["#00B4D8", "#0077B6"])
         plt.savefig("static/prediction_distribution.png")
         plt.close()
 
-        # 2️⃣ Scatter Plot (Dynamic)
-        if x_feature in df.columns and y_feature in df.columns:
-            plt.figure(figsize=(6,4))
-            plt.scatter(
-                df[x_feature],
-                df[y_feature],
-                c=df["prediction"],
-                cmap="cool",
-                alpha=0.75
-            )
-            plt.xlabel(x_feature, color="white")
-            plt.ylabel(y_feature, color="white")
-            plt.title(f"{x_feature} vs {y_feature}", color="white")
-            plt.tight_layout()
-            plt.savefig("static/scatter_plot.png")
-            plt.close()
+        # Scatter Plot
+        plt.figure(figsize=(6,4))
+        plt.scatter(df["koi_period"], df["koi_prad"], c=df["prediction"], cmap="cool", alpha=0.75)
+        plt.savefig("static/scatter_plot.png")
+        plt.close()
 
-        # ---------- Model Metrics (Static from Training) ----------
-        metrics = {
-            "accuracy": 0.9532,
-            "confusion_matrix": [[240, 10], [9, 181]],
-            "precision": 0.94,
-            "recall": 0.95,
-            "f1_score": 0.945
-        }
-    
-        # ---------- Response ----------
         return jsonify({
             "summary": summary,
-            "rank_list": rank_list[:20],  # Top 20
-            "metrics": metrics,
+            "rank_list": rank_list,
             "graphs": {
                 "distribution": "/static/prediction_distribution.png",
                 "scatter": "/static/scatter_plot.png"
@@ -193,6 +194,18 @@ def predict_csv():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# 4. NEW ROUTE for Gemini
+@app.route("/get-ai-summary", methods=["GET"])
+def get_ai_summary():
+    global last_analysis_results
+    if not last_analysis_results:
+        return jsonify({"error": "No analysis found. Upload a CSV first."}), 400
+    
+    report = generate_gemini_summary(
+        last_analysis_results["summary"], 
+        last_analysis_results["top_candidates"]
+    )
+    return jsonify({"ai_summary": report})
 
 @app.route('/predict', methods=['POST'])
 def predict():

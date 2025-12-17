@@ -23,43 +23,42 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [scatterX, setScatterX] = useState("koi_prad");
-const [scatterY, setScatterY] = useState("koi_period");
-const [scatterLoading, setScatterLoading] = useState(false);
+  const [scatterY, setScatterY] = useState("koi_period");
+  const [scatterLoading, setScatterLoading] = useState(false);
 
-const refreshScatter = async () => {
-  if (!csvResult) return;
+  const refreshScatter = async () => {
+    if (!csvResult) return;
 
-  setScatterLoading(true);
+    setScatterLoading(true);
 
-  const formData = new FormData();
-  formData.append("x_feature", scatterX);
-  formData.append("y_feature", scatterY);
+    const formData = new FormData();
+    formData.append("x_feature", scatterX);
+    formData.append("y_feature", scatterY);
 
-  const res = await fetch("http://127.0.0.1:5000/update-scatter", {
-    method: "POST",
-    body: formData,
-  });
+    const res = await fetch("http://127.0.0.1:5000/update-scatter", {
+      method: "POST",
+      body: formData,
+    });
 
-  const data = await res.json();
+    const data = await res.json();
 
-  // force reload image
-  setCsvResult((prev: any) => ({
-    ...prev,
-    graphs: {
-      ...prev.graphs,
-      scatter: data.scatter + "?t=" + Date.now(),
-    },
-  }));
+    // force reload image
+    setCsvResult((prev: any) => ({
+      ...prev,
+      graphs: {
+        ...prev.graphs,
+        scatter: data.scatter + "?t=" + Date.now(),
+      },
+    }));
 
-  setScatterLoading(false);
-};
+    setScatterLoading(false);
+  };
 
 
   const [csvResult, setCsvResult] = useState<any>(null);
   const [showBatch, setShowBatch] = useState(false);
   const [xFeature, setXFeature] = useState("koi_period");
   const [yFeature, setYFeature] = useState("koi_prad");
-
   const updateField = (key: string, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
   };
@@ -130,23 +129,47 @@ const refreshScatter = async () => {
 
     setLoading(false);
   };
-
+const [aiSummary, setAiSummary] = useState<string>("");
+const [aiLoading, setIsAiLoading] = useState<boolean>(false);
   // ---------------- CSV UPLOAD ----------------
-  const uploadCSV = async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("x_feature", xFeature);
-    formData.append("y_feature", yFeature);
+  // ---------------- CSV UPLOAD ----------------
+const uploadCSV = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("x_feature", xFeature);
+  formData.append("y_feature", yFeature);
 
+  try {
+    // 1. Initial Prediction Call
     const res = await fetch("http://127.0.0.1:5000/predict-csv", {
       method: "POST",
       body: formData,
     });
 
     const data = await res.json();
-    setCsvResult(data);
+    setCsvResult(data); // Shows graphs and table immediately
     setShowBatch(true);
-  };
+
+    // 2. Start AI Analysis immediately after
+    setIsAiLoading(true);
+    setAiSummary(""); // Clear previous summary
+
+    const aiRes = await fetch("http://127.0.0.1:5000/get-ai-summary");
+    const aiData = await aiRes.json();
+
+    if (aiData.ai_summary) {
+      setAiSummary(aiData.ai_summary);
+    } else {
+      setAiSummary("AI Analysis was unable to generate.");
+    }
+
+  } catch (error) {
+    console.error("Upload failed:", error);
+    setAiSummary("Error connecting to the server.");
+  } finally {
+    setIsAiLoading(false);
+  }
+};
 
   return (
     <div style={{ backgroundImage: "url('/media/main.png')" }} className="min-h-screen text-white">
@@ -312,8 +335,14 @@ const refreshScatter = async () => {
             <div className="flex gap-8">
               {/* LEFT */}
               <div className="w-1/2 space-y-6">
-                <p>{csvResult.ai_summary}</p>
-
+                <div className="ai-summary-container">
+                  <h3>AI Research Summary</h3>
+                  {aiLoading ? (
+                    <p className="loading-text">Genie is analyzing the data... 🔭</p>
+                  ) : (
+                    <p style={{ whiteSpace: 'pre-wrap' }}>{aiSummary}</p>
+                  )}
+                </div>
                 <p>Total Rows: {csvResult?.summary?.total_rows}</p>
                 <p>Confirmed Exoplanets: {csvResult?.summary?.confirmed_exoplanets}</p>
 
@@ -327,72 +356,72 @@ const refreshScatter = async () => {
               <div className="w-1/2 space-y-6">
                 <img src={`http://127.0.0.1:5000${csvResult.graphs.distribution}`} />
                 {/* SCATTER GRAPH */}
-<img
-  src={`http://127.0.0.1:5000${csvResult.graphs.scatter}`}
-  className="rounded-xl"
-/>
+                <img
+                  src={`http://127.0.0.1:5000${csvResult.graphs.scatter}`}
+                  className="rounded-xl"
+                />
 
-{/* CONTROLS */}
-<div
-  style={{
-    marginTop: "16px",
-    padding: "14px",
-    background: "rgba(255,255,255,0.05)",
-    borderRadius: "16px",
-    display: "flex",
-    gap: "12px",
-    alignItems: "center",
-  }}
->
-  <select
-    value={scatterX}
-    onChange={(e) => setScatterX(e.target.value)}
-    style={{
-      background: "#000",
-      color: "#fff",
-      borderRadius: "12px",
-      padding: "8px 12px",
-      border: "1px solid rgba(255,255,255,0.2)",
-    }}
-  >
-    {FEATURES.map((f) => (
-      <option key={f} value={f}>{f}</option>
-    ))}
-  </select>
+                {/* CONTROLS */}
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "14px",
+                    background: "rgba(255,255,255,0.05)",
+                    borderRadius: "16px",
+                    display: "flex",
+                    gap: "12px",
+                    alignItems: "center",
+                  }}
+                >
+                  <select
+                    value={scatterX}
+                    onChange={(e) => setScatterX(e.target.value)}
+                    style={{
+                      background: "#000",
+                      color: "#fff",
+                      borderRadius: "12px",
+                      padding: "8px 12px",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                    }}
+                  >
+                    {FEATURES.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
 
-  <select
-    value={scatterY}
-    onChange={(e) => setScatterY(e.target.value)}
-    style={{
-      background: "#000",
-      color: "#fff",
-      borderRadius: "12px",
-      padding: "8px 12px",
-      border: "1px solid rgba(255,255,255,0.2)",
-    }}
-  >
-    {FEATURES.map((f) => (
-      <option key={f} value={f}>{f}</option>
-    ))}
-  </select>
-</div>
+                  <select
+                    value={scatterY}
+                    onChange={(e) => setScatterY(e.target.value)}
+                    style={{
+                      background: "#000",
+                      color: "#fff",
+                      borderRadius: "12px",
+                      padding: "8px 12px",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                    }}
+                  >
+                    {FEATURES.map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
 
-<button
-  onClick={refreshScatter}
-  disabled={scatterLoading}
-  style={{
-    marginTop: "12px",
-    width: "100%",
-    padding: "10px",
-    background: "#ffffff",
-    color: "#000",
-    borderRadius: "12px",
-    fontWeight: 600,
-    opacity: scatterLoading ? 0.6 : 1,
-  }}
->
-  {scatterLoading ? "Refreshing..." : "Refresh Graph"}
-</button>
+                <button
+                  onClick={refreshScatter}
+                  disabled={scatterLoading}
+                  style={{
+                    marginTop: "12px",
+                    width: "100%",
+                    padding: "10px",
+                    background: "#ffffff",
+                    color: "#000",
+                    borderRadius: "12px",
+                    fontWeight: 600,
+                    opacity: scatterLoading ? 0.6 : 1,
+                  }}
+                >
+                  {scatterLoading ? "Refreshing..." : "Refresh Graph"}
+                </button>
 
               </div>
             </div>
