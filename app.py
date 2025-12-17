@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import joblib
 import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 app = Flask(__name__)
 CORS(app)
@@ -23,6 +25,74 @@ EXPECTED_FEATURES = feature_names
 @app.route('/')
 def home():
     return render_template('index.html')
+
+@app.route("/predict-csv", methods=["POST"])
+def predict_csv():
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No CSV file uploaded"}), 400
+
+        file = request.files["file"]
+        df = pd.read_csv(file)
+
+        # Check required columns
+        missing_cols = [c for c in EXPECTED_FEATURES if c not in df.columns]
+        if missing_cols:
+            return jsonify({"error": f"Missing columns: {missing_cols}"}), 400
+
+        # Select and reorder features
+        X = df[EXPECTED_FEATURES]
+
+        # Handle NaNs safely
+        X = X.fillna(0)
+
+        # Scale
+        X_scaled = scaler.transform(X)
+
+        # Predict
+        predictions = model.predict(X_scaled)
+        probabilities = model.predict_proba(X_scaled).max(axis=1)
+
+        df["prediction"] = predictions
+        df["prediction_label"] = df["prediction"].apply(
+            lambda x: "Confirmed Exoplanet" if x == 1 else "Not an Exoplanet"
+        )
+        df["confidence"] = (probabilities * 100).round(2)
+
+
+# Scatter plot
+        plt.figure(figsize=(6,4))
+        sns.scatterplot(
+          x=df["koi_period"],
+          y=df["koi_prad"],
+          hue=df["prediction_label"]
+        )
+        plt.xlabel("Orbital Period")
+        plt.ylabel("Planet Radius")
+        plt.title("Period vs Radius")
+        plt.tight_layout()
+        plt.savefig("static/period_vs_radius.png")
+        plt.close() 
+
+        # Summary
+        summary = {
+            "total_rows": len(df),
+            "confirmed_exoplanets": int((df["prediction"] == 1).sum()),
+            "not_exoplanets": int((df["prediction"] == 0).sum())
+        }
+
+     
+
+
+
+        return jsonify({
+            "summary": summary,
+            "results": df[["prediction_label", "confidence"]].to_dict(orient="records")
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/predict', methods=['POST'])
 def predict():

@@ -13,6 +13,8 @@ export default function Home() {
 
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [csvResult, setCsvResult] = useState<any>(null);
+
 
   const updateField = (key: string, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -162,6 +164,50 @@ export default function Home() {
               {loading ? "Predicting..." : "Predict"}
             </button>
 
+          </div>
+          <div>
+            <input
+  type="file"
+  accept=".csv"
+  onChange={async (e) => {
+    if (!e.target.files) return;
+
+    const formData = new FormData();
+    formData.append("file", e.target.files[0]);
+
+    const res = await fetch("http://127.0.0.1:5000/predict-csv", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+    setCsvResult(data);
+  }}
+  className="mt-6"
+/>
+{csvResult && (
+  <div style={{ marginTop: 30 }}>
+    <img src="http://127.0.0.1:5000/static/prediction_distribution.png" />
+    <img src="http://127.0.0.1:5000/static/period_vs_radius.png" />
+  </div>
+)}
+
+{csvResult && (
+  <div style={{ marginTop: 30 }}>
+    <h3>CSV Prediction Summary</h3>
+    <p>Total Rows: {csvResult.summary.total_rows}</p>
+    <p>Confirmed Exoplanets: {csvResult.summary.confirmed_exoplanets}</p>
+    <p>Not Exoplanets: {csvResult.summary.not_exoplanets}</p>
+
+    <ul>
+      {csvResult.results.slice(0, 10).map((r: any, i: number) => (
+        <li key={i}>
+          {r.prediction_label} — {r.confidence}%
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
           </div>
 
           {result && (
