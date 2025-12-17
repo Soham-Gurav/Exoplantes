@@ -4,12 +4,17 @@ import pandas as pd
 import numpy as np
 import joblib
 import sys
+import matplotlib
+matplotlib.use("Agg") 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
+
+
 app = Flask(__name__)
 CORS(app)
+
 
 try:
     model = joblib.load("exoplanet_model.pkl")
@@ -20,12 +25,61 @@ except FileNotFoundError as e:
     print(f" Error loading files: {e}. Did you run exoplanet_classification.py?")
     sys.exit(1)
 
+last_csv_df = None
+
 # The list of expected feature names must match the model's training data
 EXPECTED_FEATURES = feature_names
 
 @app.route('/')
 def home():
     return render_template('index.html')
+
+@app.route("/update-scatter", methods=["POST"])
+def update_scatter():
+    try:
+        x_feature = request.form.get("x_feature")
+        y_feature = request.form.get("y_feature")
+
+        if not x_feature or not y_feature:
+            return jsonify({"error": "Missing parameters"}), 400
+
+        global last_csv_df
+        if last_csv_df is None:
+            return jsonify({"error": "No CSV data available"}), 400
+
+        df = last_csv_df
+
+        if x_feature not in df.columns or y_feature not in df.columns:
+            return jsonify({"error": "Invalid feature selection"}), 400
+
+        # DARK THEME
+        plt.style.use("dark_background")
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+        ax.scatter(
+            df[x_feature],
+            df[y_feature],
+            c=df["prediction"],
+            cmap="cool",
+            alpha=0.75
+        )
+
+        ax.set_xlabel(x_feature, color="white")
+        ax.set_ylabel(y_feature, color="white")
+        ax.set_title(f"{x_feature} vs {y_feature}", color="white")
+
+        fig.tight_layout()
+        fig.savefig("static/scatter_plot.png")
+        plt.close(fig)
+
+        return jsonify({
+            "scatter": "/static/scatter_plot.png"
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/predict-csv", methods=["POST"])
 def predict_csv():
     try:
@@ -52,6 +106,7 @@ def predict_csv():
         X_scaled = scaler.transform(X)
 
         predictions = model.predict(X_scaled)
+       
         probabilities = model.predict_proba(X_scaled).max(axis=1)
 
         df["prediction"] = predictions
@@ -59,6 +114,9 @@ def predict_csv():
             lambda x: "Yes" if x == 1 else "No"
         )
         df["confidence"] = (probabilities * 100).round(2)
+        
+        global last_csv_df
+        last_csv_df = df.copy()
 
         # ---------- Rank List ----------
         rank_df = df.sort_values(by="confidence", ascending=False)
@@ -120,7 +178,7 @@ def predict_csv():
             "recall": 0.95,
             "f1_score": 0.945
         }
-
+    
         # ---------- Response ----------
         return jsonify({
             "summary": summary,
