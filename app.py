@@ -17,7 +17,7 @@ CORS(app)
 
 
 # Replace the text below with your actual API key from Google AI Studio
-client = genai.Client(api_key="AIzaSyDKdumXpI0idlYIkLtgP44xTFmdokIRs5s")
+client = genai.Client(api_key="API KEY HERE")
 try:
     model = joblib.load("exoplanet_model.pkl")
     scaler = joblib.load("scaler.pkl")
