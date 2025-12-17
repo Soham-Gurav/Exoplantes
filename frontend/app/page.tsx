@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 
+const FEATURES = [
+  "koi_period",
+  "koi_prad",
+  "koi_depth",
+  "koi_steff",
+  "koi_score",
+];
+
 export default function Home() {
   const [form, setForm] = useState({
     orbital_period: "",
@@ -13,13 +21,16 @@ export default function Home() {
 
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [csvResult, setCsvResult] = useState<any>(null);
 
+  const [csvResult, setCsvResult] = useState<any>(null);
+  const [xFeature, setXFeature] = useState("koi_period");
+  const [yFeature, setYFeature] = useState("koi_prad");
 
   const updateField = (key: string, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
+  // ---------------- SINGLE PREDICTION ----------------
   const submit = async () => {
     setLoading(true);
     setResult(null);
@@ -36,7 +47,7 @@ export default function Home() {
             koi_depth: Number(form.transit_depth),
             koi_steff: Number(form.stellar_temp),
 
-            // AUTO-FILL
+            // AUTO-FILL REMAINING FEATURES
             koi_fpflag_nt: 0,
             koi_fpflag_ss: 0,
             koi_fpflag_co: 0,
@@ -86,94 +97,12 @@ export default function Home() {
     setLoading(false);
   };
 
-  return (
-    <div style={{ backgroundImage: "url('/media/main.png')" }}>
-      <div className="max-w-6xl mx-auto px-6 pb-20" >
-
-        {/* HERO SECTION */}
-        <section className=" grid grid-cols-1 md:grid-cols-2 gap-12 items-center text-center md:text-left"
-        >
-
-
-          <div>
-            <p className="text-gray-300 mt-30 text-lg leading-relaxed">
-              Explore worlds beyond our solar system with our Machine Learning model.
-              Using 41 astrophysical parameters from NASA’s Kepler mission,
-              our system predicts whether a signal corresponds to a real exoplanet.
-            </p>
-          </div>
-
-        </section>
-
-        {/* FORM SECTION */}
-        <section
-          className="mt-20 p-10 rounded-2xl border border-white/20 backdrop-blur-xl shadow-2xl"
-          style={{
-            background:
-              "linear-gradient(180deg,rgba(94, 94, 94, 0.25) 10%, rgba(255, 255, 255, 0) 100%)",
-          }}
-        >
-          <h2 className="text-3xl font-bold mb-6">Exoplanet Prediction Model</h2>
-
-          <div className="grid md:grid-cols-2 gap-6">
-
-            <input
-              type="number"
-              placeholder="Orbital Period (koi_period)"
-              value={form.orbital_period}
-              onChange={(e) => updateField("orbital_period", e.target.value)}
-              className="p-4 rounded-xl bg-black text-white border border-white/30"
-            />
-
-            <input
-              type="number"
-              placeholder="Planet Radius (koi_prad)"
-              value={form.planet_radius}
-              onChange={(e) => updateField("planet_radius", e.target.value)}
-              className="p-4 rounded-xl bg-black text-white border border-white/30"
-            />
-
-            <input
-              type="number"
-              placeholder="Transit Depth (koi_depth)"
-              value={form.transit_depth}
-              onChange={(e) => updateField("transit_depth", e.target.value)}
-              className="p-4 rounded-xl bg-black text-white border border-white/30"
-            />
-
-            <input
-              type="number"
-              placeholder="Stellar Temp (koi_steff)"
-              value={form.stellar_temp}
-              onChange={(e) => updateField("stellar_temp", e.target.value)}
-              className="p-4 rounded-xl bg-black text-white border border-white/30"
-            />
-
-            <input
-              type="number"
-              placeholder="KOI Score (koi_score)"
-              value={form.koi_score}
-              onChange={(e) => updateField("koi_score", e.target.value)}
-              className="p-4 rounded-xl bg-black text-white border border-white/30"
-            />
-
-            <button
-              onClick={submit}
-              className="md:col-span-2 bg-white text-black font-bold py-4 rounded-xl hover:bg-gray-200 transition"
-            >
-              {loading ? "Predicting..." : "Predict"}
-            </button>
-
-          </div>
-          <div>
-            <input
-  type="file"
-  accept=".csv"
-  onChange={async (e) => {
-    if (!e.target.files) return;
-
+  // ---------------- CSV UPLOAD ----------------
+  const uploadCSV = async (file: File) => {
     const formData = new FormData();
-    formData.append("file", e.target.files[0]);
+    formData.append("file", file);
+    formData.append("x_feature", xFeature);
+    formData.append("y_feature", yFeature);
 
     const res = await fetch("http://127.0.0.1:5000/predict-csv", {
       method: "POST",
@@ -182,40 +111,127 @@ export default function Home() {
 
     const data = await res.json();
     setCsvResult(data);
-  }}
-  className="mt-6"
-/>
-{csvResult && (
-  <div style={{ marginTop: 30 }}>
-    <img src="http://127.0.0.1:5000/static/prediction_distribution.png" />
-    <img src="http://127.0.0.1:5000/static/period_vs_radius.png" />
-  </div>
-)}
+  };
 
-{csvResult && (
-  <div style={{ marginTop: 30 }}>
-    <h3>CSV Prediction Summary</h3>
-    <p>Total Rows: {csvResult.summary.total_rows}</p>
-    <p>Confirmed Exoplanets: {csvResult.summary.confirmed_exoplanets}</p>
-    <p>Not Exoplanets: {csvResult.summary.not_exoplanets}</p>
+  return (
+    <div style={{ backgroundImage: "url('/media/main.png')" }}>
+      <div className="max-w-6xl mx-auto px-6 pb-20">
 
-    <ul>
-      {csvResult.results.slice(0, 10).map((r: any, i: number) => (
-        <li key={i}>
-          {r.prediction_label} — {r.confidence}%
-        </li>
-      ))}
-    </ul>
-  </div>
-)}
+        {/* FORM SECTION */}
+        <section className="mt-20 p-10 rounded-2xl border border-white/20 backdrop-blur-xl shadow-2xl">
+          <h2 className="text-3xl font-bold mb-6">Exoplanet Prediction Model</h2>
+
+          {/* SINGLE INPUT */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <input type="number" placeholder="Orbital Period"
+              value={form.orbital_period}
+              onChange={(e) => updateField("orbital_period", e.target.value)}
+              className="p-4 rounded-xl bg-black text-white border border-white/30"
+            />
+            <input type="number" placeholder="Planet Radius"
+              value={form.planet_radius}
+              onChange={(e) => updateField("planet_radius", e.target.value)}
+              className="p-4 rounded-xl bg-black text-white border border-white/30"
+            />
+            <input type="number" placeholder="Transit Depth"
+              value={form.transit_depth}
+              onChange={(e) => updateField("transit_depth", e.target.value)}
+              className="p-4 rounded-xl bg-black text-white border border-white/30"
+            />
+            <input type="number" placeholder="Stellar Temp"
+              value={form.stellar_temp}
+              onChange={(e) => updateField("stellar_temp", e.target.value)}
+              className="p-4 rounded-xl bg-black text-white border border-white/30"
+            />
+            <input type="number" placeholder="KOI Score"
+              value={form.koi_score}
+              onChange={(e) => updateField("koi_score", e.target.value)}
+              className="p-4 rounded-xl bg-black text-white border border-white/30"
+            />
+
+            <button onClick={submit}
+              className="md:col-span-2 bg-white text-black font-bold py-4 rounded-xl">
+              {loading ? "Predicting..." : "Predict"}
+            </button>
           </div>
 
+          {/* RESULT */}
           {result && (
-            <p className="mt-8 text-xl font-bold text-center">
+            <p className="mt-6 text-xl font-bold text-center">
               <span className={result.includes("Confirmed") ? "text-green-400" : "text-red-400"}>
                 {result}
               </span>
             </p>
+          )}
+
+          {/* CSV UPLOAD */}
+          <hr className="my-8 border-white/20" />
+
+          <h3 className="text-xl font-bold mb-4">Batch CSV Prediction</h3>
+
+          {/* DROPDOWNS */}
+          <div className="flex gap-4 mb-4">
+            <select value={xFeature} onChange={(e) => setXFeature(e.target.value)}>
+              {FEATURES.map(f => <option key={f}>{f}</option>)}
+            </select>
+            <select value={yFeature} onChange={(e) => setYFeature(e.target.value)}>
+              {FEATURES.map(f => <option key={f}>{f}</option>)}
+            </select>
+          </div>
+
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => e.target.files && uploadCSV(e.target.files[0])}
+          />
+
+          {/* CSV RESULTS */}
+          {csvResult && (
+            <div className="mt-8">
+              <h4 className="font-bold">Summary</h4>
+              <p>Total Rows: {csvResult.summary.total_rows}</p>
+              <p>Confirmed: {csvResult.summary.confirmed_exoplanets}</p>
+              <p>Not Exoplanets: {csvResult.summary.not_exoplanets}</p>
+
+              {/* RANK LIST */}
+              <h4 className="font-bold mt-6">Top Candidates</h4>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Kepler ID</th>
+                    <th>Confidence (%)</th>
+                    <th>Exoplanet</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvResult.rank_list.map((r: any, i: number) => (
+                    <tr key={i}>
+                      <td>{r.kepid}</td>
+                      <td>{r.confidence}</td>
+                      <td style={{ color: r.exoplanet === "Yes" ? "lightgreen" : "red" }}>
+                        {r.exoplanet}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* GRAPHS */}
+              <div className="mt-6">
+                <img src={`http://127.0.0.1:5000${csvResult.graphs.distribution}`} />
+                <img src={`http://127.0.0.1:5000${csvResult.graphs.scatter}`} />
+              </div>
+
+              {/* METRICS */}
+              <div className="mt-6">
+                <h4 className="font-bold">Model Performance</h4>
+                <p>Accuracy: {csvResult.metrics.accuracy}</p>
+                <p>Precision: {csvResult.metrics.precision}</p>
+                <p>Recall: {csvResult.metrics.recall}</p>
+                <p>F1 Score: {csvResult.metrics.f1_score}</p>
+                <pre>{JSON.stringify(csvResult.metrics.confusion_matrix)}</pre>
+              </div>
+            </div>
           )}
         </section>
       </div>
